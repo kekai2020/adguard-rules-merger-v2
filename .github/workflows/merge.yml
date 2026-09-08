@@ -1,11 +1,8 @@
-# V2 GitHub Actions — Automatic rule merging every 6 hours
-
 name: Merge Rules
 
 on:
   schedule:
     - cron: '0 */6 * * *'
-
   workflow_dispatch:
     inputs:
       sources:
@@ -16,7 +13,6 @@ on:
         description: 'Detect block/allow conflicts'
         required: false
         default: 'false'
-
   push:
     branches: [main]
     paths:
@@ -27,6 +23,11 @@ on:
 
 env:
   PYTHON_VERSION: '3.11'
+
+# ========== 关键修复 1：并发控制 ==========
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   merge:
@@ -81,7 +82,6 @@ jobs:
         print(f"V2 merged {len(rules)} rules ({stats['dedup_rate']:.1f}% dedup, {stats['elapsed_time']:.1f}s)")
         print(f"Dedup detail: exact={stats['exact_merged']} wildcard={stats['wildcard_removed']} conflict={stats['conflict_resolved']}")
 
-        # Write output
         with open('output/merged_rules.txt', 'w', encoding='utf-8') as f:
             f.write(f"! Merged AdGuard Filter Rules\n")
             f.write(f"! Generated: {datetime.now(timezone.utc).isoformat()}\n")
@@ -93,11 +93,9 @@ jobs:
             for rule in rules:
                 f.write(f"{rule}\n")
 
-        # Report
         reporter = MergeReporter(rules, stats)
         reporter.save('output/detailed_report.md', fmt='markdown')
 
-        # Outputs
         gh_out = os.environ['GITHUB_OUTPUT']
         with open(gh_out, 'a') as f:
             for k in ('total_rules', 'block_rules', 'allow_rules', 'comment_rules',
@@ -109,25 +107,35 @@ jobs:
         PYEOF
       timeout-minutes: 15
 
+    # ========== 关键修复 2：先同步远程，再 commit ==========
     - name: Commit and push
       run: |
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git config --local user.name "github-actions[bot]"
+        
+        # 先获取远程最新状态
+        git fetch origin main
+        
+        # 把当前 HEAD 重置到远程最新提交，但保留工作区修改（即新生成的 output/ 文件）
+        # --soft：保留暂存区和工作区
+        git reset --soft origin/main
+        
+        # 此时 output/ 下的文件处于"已修改但未提交"状态，直接 add + commit
         git add output/
         if git diff --cached --quiet; then
           echo "No changes"
           exit 0
         fi
+        
         git commit -m "chore: update merged rules v2 [$(date -u +%Y-%m-%d_%H:%M)]
         
         - Total: ${{ steps.merge.outputs.total_rules }}
         - Block: ${{ steps.merge.outputs.block_rules }}
         - Allow: ${{ steps.merge.outputs.allow_rules }}
-        - Dedup: ${{ steps.merge.outputs.dedup_rate }}% (exact=${{ steps.merge.outputs.exact_merged }}, wildcard=${{ steps.merge.outputs.wildcard_removed }}, conflict=${{ steps.merge.outputs.conf[...]
+        - Dedup: ${{ steps.merge.outputs.dedup_rate }}% (exact=${{ steps.merge.outputs.exact_merged }}, wildcard=${{ steps.merge.outputs.wildcard_removed }}, conflict=${{ steps.merge.outputs.conflict_resolved }})
         - Time: ${{ steps.merge.outputs.elapsed_time }}s"
         
-        # Try to push with rebase, using ours strategy for conflicts
-        git pull --rebase -Xours origin main
+        # 直接 push，因为 HEAD 已经是 origin/main 的子提交，不会冲突
         git push origin HEAD:main
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -135,6 +143,6 @@ jobs:
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: merged-rules
+        name: merged-rules-${{ github.run_id }}
         path: output/
-        retention-days: 30
+        retention-days: 7
