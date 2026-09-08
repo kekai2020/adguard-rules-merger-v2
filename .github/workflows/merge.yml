@@ -119,13 +119,15 @@ jobs:
           exit 0
         fi
         git commit -m "chore: update merged rules v2 [$(date -u +%Y-%m-%d_%H:%M)]
-
+        
         - Total: ${{ steps.merge.outputs.total_rules }}
         - Block: ${{ steps.merge.outputs.block_rules }}
         - Allow: ${{ steps.merge.outputs.allow_rules }}
-        - Dedup: ${{ steps.merge.outputs.dedup_rate }}% (exact=${{ steps.merge.outputs.exact_merged }}, wildcard=${{ steps.merge.outputs.wildcard_removed }}, conflict=${{ steps.merge.outputs.conflict_resolved }})
+        - Dedup: ${{ steps.merge.outputs.dedup_rate }}% (exact=${{ steps.merge.outputs.exact_merged }}, wildcard=${{ steps.merge.outputs.wildcard_removed }}, conflict=${{ steps.merge.outputs.conf[...]
         - Time: ${{ steps.merge.outputs.elapsed_time }}s"
-        git pull --rebase origin main
+        
+        # Try to push with rebase, using ours strategy for conflicts
+        git pull --rebase -Xours origin main
         git push origin HEAD:main
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
