@@ -1,0 +1,138 @@
+# V2 GitHub Actions — Automatic rule merging every 6 hours
+
+name: Merge Rules
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: 'Custom sources (comma-separated URLs)'
+        required: false
+        default: ''
+      detect_conflicts:
+        description: 'Detect block/allow conflicts'
+        required: false
+        default: 'false'
+
+  push:
+    branches: [main]
+    paths:
+      - 'config/sources.yaml'
+      - 'merger/**'
+      - 'merge_rules.py'
+      - '.github/workflows/merge.yml'
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Merge filter rules
+      id: merge
+      run: |
+        mkdir -p output
+        python3 << 'PYEOF'
+        import sys, os
+        from merger import RuleEngine, MergeReporter
+        from config_loader import load_sources_config
+        from datetime import datetime, timezone
+
+        engine = RuleEngine(timeout=60, max_workers=10, allow_overrides_block=True)
+
+        custom = '${{ github.event.inputs.sources }}'
+        if custom:
+            sources = [s.strip() for s in custom.split(',') if s.strip()]
+        else:
+            sources = load_sources_config('config/sources.yaml')
+
+        if not sources:
+            print("No sources!")
+            sys.exit(1)
+
+        detect = '${{ github.event.inputs.detect_conflicts }}'.lower() == 'true'
+        result = engine.merge(sources, return_stats=True, detect_conflicts=detect)
+        rules = result['rules']
+        stats = result['stats']
+
+        print(f"V2 merged {len(rules)} rules ({stats['dedup_rate']:.1f}% dedup, {stats['elapsed_time']:.1f}s)")
+        print(f"Dedup detail: exact={stats['exact_merged']} wildcard={stats['wildcard_removed']} conflict={stats['conflict_resolved']}")
+
+        # Write output
+        with open('output/merged_rules.txt', 'w', encoding='utf-8') as f:
+            f.write(f"! Merged AdGuard Filter Rules\n")
+            f.write(f"! Generated: {datetime.now(timezone.utc).isoformat()}\n")
+            f.write(f"! Sources: {stats['sources_ok']}/{stats['sources_total']}\n")
+            f.write(f"! Total rules: {len(rules)}\n")
+            f.write(f"! Dedup rate: {stats['dedup_rate']:.1f}%\n")
+            f.write(f"! Dedup detail: exact_merged={stats['exact_merged']} wildcard_removed={stats['wildcard_removed']} conflict_resolved={stats['conflict_resolved']}\n")
+            f.write("!\n")
+            for rule in rules:
+                f.write(f"{rule}\n")
+
+        # Report
+        reporter = MergeReporter(rules, stats)
+        reporter.save('output/detailed_report.md', fmt='markdown')
+
+        # Outputs
+        gh_out = os.environ['GITHUB_OUTPUT']
+        with open(gh_out, 'a') as f:
+            for k in ('total_rules', 'block_rules', 'allow_rules', 'comment_rules',
+                       'dedup_rate', 'elapsed_time', 'exact_merged', 'wildcard_removed',
+                       'conflict_resolved'):
+                f.write(f"{k}={stats.get(k, len(rules) if k == 'total_rules' else 0)}\n")
+
+        print("✅ V2 merge done")
+        PYEOF
+      timeout-minutes: 15
+
+    - name: Commit and push
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git add output/
+        if git diff --cached --quiet; then
+          echo "No changes"
+          exit 0
+        fi
+        git commit -m "chore: update merged rules v2 [$(date -u +%Y-%m-%d_%H:%M)]
+
+        - Total: ${{ steps.merge.outputs.total_rules }}
+        - Block: ${{ steps.merge.outputs.block_rules }}
+        - Allow: ${{ steps.merge.outputs.allow_rules }}
+        - Dedup: ${{ steps.merge.outputs.dedup_rate }}% (exact=${{ steps.merge.outputs.exact_merged }}, wildcard=${{ steps.merge.outputs.wildcard_removed }}, conflict=${{ steps.merge.outputs.conflict_resolved }})
+        - Time: ${{ steps.merge.outputs.elapsed_time }}s"
+        git pull --rebase origin main
+        git push origin HEAD:main
+      env:
+        GITHUB_TOKEN: *** secrets.GITHUB_TOKEN }}
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: merged-rules
+        path: output/
+        retention-days: 30
