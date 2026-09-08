@@ -37,12 +37,12 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         fetch-depth: 1
 
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: ${{ env.PYTHON_VERSION }}
         cache: 'pip'
@@ -116,9 +116,11 @@ jobs:
         # 先获取远程最新状态
         git fetch origin main
         
-        # 把当前 HEAD 重置到远程最新提交，但保留工作区修改（即新生成的 output/ 文件）
-        # --soft：保留暂存区和工作区
-        git reset --soft origin/main
+        # 把 HEAD 和暂存区（index）都重置到远程最新提交，但保留工作区修改（即新生成的 output/ 文件）
+        # 注意：必须用默认的 mixed 重置（git reset origin/main），不能用 --soft。
+        # --soft 只移动 HEAD、不动暂存区，会把"旧 checkout 的整棵树"当作提交基线，
+        # 导致新提交把 merge.yml 等中间改动回退成旧版本（workflow_dispatch 触发旧 commit 时必现）。
+        git reset origin/main
         
         # 此时 output/ 下的文件处于"已修改但未提交"状态，直接 add + commit
         git add output/
@@ -141,7 +143,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: merged-rules-${{ github.run_id }}
         path: output/
