@@ -1,6 +1,6 @@
 # AdGuard Rules Merge Report
 
-**Generated:** 2026-09-22 15:08:32 UTC
+**Generated:** 2026-09-22 16:35:50 UTC
 
 ## Summary
 
@@ -10,7 +10,7 @@
 | Rules after dedup | 3,751,538 |
 | Deduplication rate | 13.6% |
 | Sources loaded | 18 / 18 |
-| Processing time | 27.56s |
+| Processing time | 29.82s |
 | Exact merges | 588,971 |
 | Wildcard removals | 1 |
 | Conflicts resolved | 33 |
@@ -39,8 +39,8 @@
 | `https://adguardteam.github.io/HostlistsRegistry/assets/filter_57.txt` | 1,375 |
 | `https://adguardteam.github.io/HostlistsRegistry/assets/filter_31.txt` | 930 |
 | `https://adguardteam.github.io/HostlistsRegistry/assets/filter_10.txt` | 930 |
-| `https://adguardteam.github.io/HostlistsRegistry/assets/filter_53.txt` | 903 |
-| `https://adguardteam.github.io/HostlistsRegistry/assets/filter_63.txt` | 395 |
+| `https://adguardteam.github.io/HostlistsRegistry/assets/filter_53.txt` | 905 |
+| `https://adguardteam.github.io/HostlistsRegistry/assets/filter_63.txt` | 393 |
 | `https://adguardteam.github.io/HostlistsRegistry/assets/filter_8.txt` | 317 |
 | `https://adguardteam.github.io/HostlistsRegistry/assets/filter_71.txt` | 8 |
 
